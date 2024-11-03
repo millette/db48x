@@ -411,7 +411,7 @@ algebraic_p Root::solve(program_r pgm, algebraic_r goal, algebraic_r guess)
             if (nx && px)
             {
                 // Try to bisect
-                x  = (nx + px) / two;
+                x = (nx + px) / two;
                 if (!x)
                 {
                     store(nx);
@@ -546,9 +546,7 @@ algebraic_p Root::solve(algebraic_g &eq,
 }
 
 
-list_p Root::multiple_equation_solver(list_r eqs,
-                                      list_r names,
-                                      list_r guesses)
+list_p Root::multiple_equation_solver(list_r eqs, list_r names, list_r guesses)
 // ----------------------------------------------------------------------------
 //   Solve multiple equations in sequence (equivalent to HP's MES)
 // ----------------------------------------------------------------------------
@@ -610,12 +608,13 @@ list_p Root::multiple_equation_solver(list_r eqs,
     // Looks good: loop on equations trying to find one we can solve
     size_t ecount = eqs->items();
     list_g vars   = names;
+    list_g eqns   = eqs;
 
     // While there are variables to solve for
     while (vcount && ecount)
     {
-        list::iterator vi = vars->begin();
-        list::iterator gi = gvalues->begin();
+        list::iterator vi    = vars->begin();
+        list::iterator gi    = gvalues->begin();
         bool           found = false;
 
         // Loop on all variables, looking for one we can solve for
@@ -627,8 +626,11 @@ list_p Root::multiple_equation_solver(list_r eqs,
                 rt.type_error();
                 return nullptr;
             }
-            list::iterator ei = eqs->begin();
-            for (size_t e = 0; !found && e < ecount; e++)
+            list::iterator ei = eqns->begin();
+            expression_g   best;
+            uint           bestvars = ~0U;
+            size_t         bestidx  = 0;
+            for (size_t e = 0; !found && e < ecount && bestvars; e++)
             {
                 expression_g eq = expression::get(*ei);
                 if (!eq)
@@ -639,24 +641,46 @@ list_p Root::multiple_equation_solver(list_r eqs,
                 }
                 if (eq->is_well_defined(var, false))
                 {
-                    program_g   pgm    = +eq;
-                    algebraic_g name   = +var;
-                    algebraic_p guess  = algebraic_p(*gi);
-                    algebraic_g solved = solve(pgm, name, guess);
-                    if (!solved)
+                    list::iterator ovi    = vars->begin();
+                    uint           wdvars = 0;
+                    for (size_t ov = 0; ov < vcount; ov++)
                     {
-                        solver_command_error();
-                        rt.no_solution_error();
-                        return nullptr;
+                        if (ov != v)
+                            if (symbol_g ovar = (*ovi)->as_quoted<symbol>())
+                                if (eq->is_well_defined(ovar, false, var))
+                                    wdvars++;
+                        ++ovi;
                     }
-
-                    // That's one variable less to deal with
-                    vars = vars->remove(v);
-                    gvalues = gvalues->remove(v);
-                    vcount--;
-                    found = true;
+                    if (wdvars < bestvars)
+                    {
+                        best     = eq;
+                        bestvars = wdvars;
+                        bestidx  = e;
+                    }
                 }
                 ++ei;
+            }
+
+            if (best)
+            {
+                program_g   pgm    = +best;
+                algebraic_g name   = +var;
+                algebraic_p guess  = algebraic_p(*gi);
+                algebraic_g solved = solve(pgm, name, guess);
+                if (!solved)
+                {
+                    solver_command_error();
+                    rt.no_solution_error();
+                    return nullptr;
+                }
+
+                // That's one variable less to deal with
+                vars    = vars->remove(v);
+                gvalues = gvalues->remove(v);
+                eqns    = eqns->remove(bestidx);
+                vcount--;
+                ecount--;
+                found = true;
             }
             ++vi;
             ++gi;
@@ -674,8 +698,6 @@ list_p Root::multiple_equation_solver(list_r eqs,
     list_g result = names->map(recall);
     return result;
 }
-
-
 
 
 // ============================================================================
@@ -1112,17 +1134,14 @@ COMMAND_BODY(SolvingMenuSolve)
         uint idx = key - KEY_F1 + 5 * ui.page() - 1;
         if (symbol_g sym = expression_variable(idx))
         {
-            object_g obj = directory::recall_all(sym, false);
+            object_g    obj   = directory::recall_all(sym, false);
             algebraic_g value = obj ? obj->as_algebraic() : nullptr;
             if (!value)
                 value = integer::make(0);
-            if (list_g eql = expression::current_equation(false, true))
-                if (program_g eq = eql->as<expression>())
-                    if (value && expression_p(+eq)->is_well_defined(sym))
-                        if (algebraic_p var = expression_variable_or_unit(idx))
-                            if (algebraic_g res = Root::solve(eq, var, value))
-                                if (assign(sym, res))
-                                    return OK;
+            if (algebraic_g eql = expression::current_equation(true, true))
+                if (algebraic_g var = expression_variable_or_unit(idx))
+                    if (algebraic_g res = Root::solve(eql, var, value))
+                        return OK;
         }
     }
 
