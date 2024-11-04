@@ -2334,6 +2334,108 @@ You can edit it by recalling its content on the stack using
 back to disk using `"config:equations.csv" STO`.
 # Release notes
 
+## Release 0.8.4 "Commands" - Optimizations and equation fixups
+
+This release focuses on improving the solver support for the equation library, fixing various bugs found during development of that equation library, and optimizing the garbage collector.
+
+### Features
+
+* units: Implement non-proportional unit conversions, notably temperature
+  conversions like `°F` to `°C`. The underlying engine allows arbitrary
+  conversions, including non-linear ones, which would be useful for example for
+  the Dalton temperature scale. However, that capability is not presently used.
+
+* units: Convert temperatures to `K` in multiplication and division. For
+  example, when computing `ⒸR*T`, we need the temperature `T` to be in `K` even
+  if given in Celsius or Farenheit initially.
+
+* solver: Report underlying evaluation error. For example, if the expression
+  being evaluated reports `Inconsistent units`, this is what the solver will
+  return instead of `No solution?`.
+
+* Add configurable interval for busy cursor drawing, `BusyIndicatorRefresh`.
+  The default is now 50ms, which refreshes the busy cursor more frequently than
+  before, and may be detrimental to battery life and performance. You can
+  restore the previous behaviour by setting a higher value, e.g. 1000ms.
+
+* Automatic cleanup of temporaries to minimize the number of garbage collection
+  occurences. When a complex operation such as `exp` is performed, there are a
+  number of intermediate results that require storage, and were previously only
+  cleaned up by the garbage collector. They are now automatically cleaned up
+  before the function returns. The same optimization applies to intermediate
+  graphics while rendering equations, notably on the stack. This delivers
+  [significant performance improvements](#garbage-collector-performance) for
+  long-running operations: the "[floating-point sum test](https://www.hpmuseum.org/forum/thread-9750.html)
+  is now about 20% faster on SwissMicros calculators.
+
+* The `GCStats` command shows garbage collector statistics.
+
+### Bug fixes
+
+* Fix functions taking real-like unit input. For example, `atan(1_cm/1_m)` now
+  computes correctly.
+
+* solver: Do not solve system of equations using existing values. The multiple
+  equation solver would incorrectly consider existing values in variables to
+  check if an equation could be used for solving. The heuristic now picks up the
+  equation that requires the smallest number of unknown variables among the
+  available equations.
+
+* Parse `x!` as factorial of `x` and not as a `x!` symbol. The incorrect parsing
+  was due to an ambiguity in the HP48 parser that was resolved in the
+  HP50G. DB50X now behaves like the HP50G and does not allow `!` to appear at
+  the end of a name.
+
+* Do not enter the debugger if `DebugOnError` is set while evaluating an `iferr`
+  statement. The assumption is that if you try to catch an error, you do not
+  intend to debug the code being tested for an error. If this is not the desired
+  behaviour, then an explicit `DebugOnError` should be inserted in the body of
+  `iferr`.
+
+* Various unit-related fixes in the equation library.
+
+* Ensure that we don't execute auto-completed catalog commands twice. The recent
+  change that added the auto-completed command to the command-line history also
+  caused the command to be executed on the command-line before being evaluated
+  again from the key.
+
+* Avoid a rare crash when an equation was too big to be rendered graphically and
+  a garbage collection cycle occured between graphic rendering and text
+  rendering.
+
+* Do not emit error message from `Vec→` for vectors containing units. The
+  incorrect error was introduced by the logic detecting polar, cylindrical or
+  spherical vectors.
+
+* Fixed `atan2` special cases to always generate the correct angle. Cases where
+  `atan2` would generate an exact result would usually result in the wrong angle
+  unit scaling being applied.
+
+* Fixed parsing of `tan⁻¹` in expressions.
+
+* units: Skip the `=Cycle` section for unit definitions. This was causing
+  incorrect unit conversion errors for users who had added common units in the
+  `=Cycle` section of their `config/units.csv` file.
+
+* The user-defined units menu no longer list all the built-in units after the
+  user-defined ones.
+
+
+### Enhancements
+
+* Major update to the documentation of the equation library, contributed by
+  Jean Wilson.
+* equations: Replace `°F` with `°C` in equations
+* tests: Add support for tests that are known to fail (expected failures)
+* tests: Run equation tests with `11 DIG`
+* tests: Add ability to take screen snapshots on failure
+* units: Put temperatures before pressure in `Fluids` section
+* help: Add image for B Field From Finite Wire
+* Makefile: When using `make update`, do not keep the temporary `.png`
+* documentation: Indicate where to get `tac`
+* documentation: Fix README link to browser version
+
+
 ## Release 0.8.3 "Blindness" - User mode and custom header
 
 This release focuses on various user interface aspects.
